@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPu
 
 import sys, json, csv, subprocess, re,os
 from PyQt6.QtCore import QProcess, QProcessEnvironment
-
+from rotating_circle import RotatingCircleWidget
 class DevineApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -57,7 +57,16 @@ class DevineApp(QWidget):
         self.get_button.clicked.connect(self.get_button_clicked)
         self.layout.addWidget(self.list_button)
         self.layout.addWidget(self.stop_button)
+
+        self.rotating_circle = RotatingCircleWidget()
+        self.rotating_circle.setVisible(False)
+
+        # Insert the rotating circle into the layout
+        self.rotating_circle.insert_into_layout(self.quality_seasons_episodes_layout)
+
         self.setLayout(self.layout)
+
+
         self.saved_programs, self.services_data = self.load_saved_programs()
         self.update_series_combo()
         self.series_combo.currentTextChanged.connect(self.update_url_field)
@@ -110,9 +119,13 @@ class DevineApp(QWidget):
             self.output_text.setText("Error: URL is empty. Please provide a valid URL.")
 
     def on_process_started(self):
+        self.rotating_circle.setVisible(True)
+
+        self.rotating_circle.start_rotation()
         print("Started")
 
     def on_process_finished(self, exitCode, exitStatus):
+        self.rotating_circle.stop_rotation()
         print("Ended")
         # You can also add additional actions here if needed based on the exit status
         if exitStatus == QProcess.ExitStatus.NormalExit:
@@ -122,7 +135,7 @@ class DevineApp(QWidget):
 
     def handle_output(self):
         output = self.process.readAllStandardOutput().data().decode()
-        self.output_text.append(output)
+        #self.output_text.append(output)
 
     def handle_error(self):
         error = self.process.readAllStandardError().data().decode()
@@ -185,6 +198,7 @@ class DevineApp(QWidget):
             self.url_entry.clear()
 
     def list_button_clicked(self):
+
         title = self.series_combo.currentText()
         url = self.url_entry.text()
         if title and url:
@@ -212,7 +226,7 @@ class DevineApp(QWidget):
         self.parse_and_display_output(result.stdout)
 
     def parse_and_display_output(self, output):
-        self.output_text.append(output)
+        #self.output_text.append(output)
         self.seasons = self.parse_output(output)
         self.populate_seasons()
 

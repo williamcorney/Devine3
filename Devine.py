@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QComboBox, QLabel, QTextEdit, QInputDialog
-from PyQt6.QtCore import QProcess
-import sys, json, csv, subprocess, re
+
+import sys, json, csv, subprocess, re,os
+from PyQt6.QtCore import QProcess, QProcessEnvironment
 
 class DevineApp(QWidget):
     def __init__(self):
@@ -50,9 +51,12 @@ class DevineApp(QWidget):
         self.get_button = QPushButton("Get Episode", self)
         self.layout.addWidget(self.get_button)
         self.list_button = QPushButton("List Episodes", self)
+        self.stop_button = QPushButton("Abort!",self)
+        self.stop_button.clicked.connect (self.kill_process)
         self.list_button.clicked.connect(self.list_button_clicked)
         self.get_button.clicked.connect(self.get_button_clicked)
         self.layout.addWidget(self.list_button)
+        self.layout.addWidget(self.stop_button)
         self.setLayout(self.layout)
         self.saved_programs, self.services_data = self.load_saved_programs()
         self.update_series_combo()
@@ -60,31 +64,61 @@ class DevineApp(QWidget):
         self.seasons = {}
         self.season_combo.currentIndexChanged.connect(self.update_episodes)
 
+    from PyQt6.QtCore import QProcess
+
     def get_button_clicked(self):
         season_number = self.season_combo.currentText()
+        season_number = ''.join(filter(str.isdigit, season_number))
         episode_text = self.episode_combo.currentText()
         episode_number = ''.join(filter(str.isdigit, episode_text))
         season_number = season_number.zfill(2)
         episode_number = episode_number.zfill(2)
         url = self.url_entry.text()
+
         if url:
             service_code = self.get_service_code(url)
             if service_code:
-                command = [
-                    "devine", "dl", service_code, url
-                ]
+                # Construct the shell command
+                shell_command = f"devine dl -w s{season_number}e{episode_number} {service_code} {url}"
+                print(f"Shell: {shell_command}")
                 self.process = QProcess(self)
-                self.process.setProgram(command[0])
-                self.process.setArguments(command[1:])
+
+                # Modify the PATH environment variable
+                process_env = QProcessEnvironment.systemEnvironment()
+                additional_path = "/Users/williamcorney/Library/Application Support/devine/"
+                current_path = process_env.value("PATH")
+                new_path = f"{additional_path}:{current_path}"
+                process_env.insert("PATH", new_path)
+                self.process.setProcessEnvironment(process_env)
+
+                self.process.setProgram("/bin/bash")  # Use an interactive shell
+                self.process.setArguments(["-c", shell_command])  # Pass the command as an argument to the shell
+
+                # Connect signals
                 self.process.readyReadStandardOutput.connect(self.handle_output)
                 self.process.readyReadStandardError.connect(self.handle_error)
+                self.process.started.connect(self.on_process_started)  # Monitor process start
+                self.process.finished.connect(self.on_process_finished)  # Monitor process finish
+
                 self.process.start()
+
                 if not self.process.waitForStarted():
-                    self.output_text.append("Error: Failed to start devine process.")
+                    self.output_text.append("Error: Failed to start the devine process.")
             else:
                 self.output_text.setText("Error: Unable to determine the service code for the provided URL.")
         else:
             self.output_text.setText("Error: URL is empty. Please provide a valid URL.")
+
+    def on_process_started(self):
+        print("Started")
+
+    def on_process_finished(self, exitCode, exitStatus):
+        print("Ended")
+        # You can also add additional actions here if needed based on the exit status
+        if exitStatus == QProcess.ExitStatus.NormalExit:
+            print(f"Process exited normally with exit code {exitCode}")
+        else:
+            print(f"Process exited with an error (exit code {exitCode})")
 
     def handle_output(self):
         output = self.process.readAllStandardOutput().data().decode()
@@ -93,6 +127,13 @@ class DevineApp(QWidget):
     def handle_error(self):
         error = self.process.readAllStandardError().data().decode()
         self.output_text.append(f"Error: {error}")
+
+    def kill_process(self):
+        if self.process and self.process.state() == QProcess.ProcessState.Running:
+            self.process.kill()  # Immediately kill the process
+            print("Process killed")
+        else:
+            print("No running process to kill.")
 
     def load_saved_programs(self):
         saved_programs = {}
@@ -252,7 +293,7 @@ class DevineApp(QWidget):
         seasons = {season: data for season, data in final_seasons.items() if data['episodes']}
 
         # Return the final seasons dictionary
-        print(seasons)
+
         return seasons
 
     def populate_seasons(self):
@@ -263,7 +304,7 @@ class DevineApp(QWidget):
     def update_episodes(self):
         self.episode_combo.clear()
         season_text = self.season_combo.currentText()
-        print (self.seasons)
+
         if season_text:
             season_number = int(season_text.split()[-1])
             if season_number in self.seasons:

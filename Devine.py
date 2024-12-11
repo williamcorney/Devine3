@@ -3,6 +3,9 @@ from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPu
 import sys, json, csv, subprocess, re,os
 from PyQt6.QtCore import QProcess, QProcessEnvironment
 from rotating_circle import RotatingCircleWidget
+
+
+
 class DevineApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -77,6 +80,7 @@ class DevineApp(QWidget):
 
     def get_button_clicked(self):
         season_number = self.season_combo.currentText()
+        quality = self.quality_combo.currentText()
         season_number = ''.join(filter(str.isdigit, season_number))
         episode_text = self.episode_combo.currentText()
         episode_number = ''.join(filter(str.isdigit, episode_text))
@@ -88,7 +92,7 @@ class DevineApp(QWidget):
             service_code = self.get_service_code(url)
             if service_code:
                 # Construct the shell command
-                shell_command = f"devine dl -w s{season_number}e{episode_number} {service_code} {url}"
+                shell_command = f"devine dl -q {quality} -w s{season_number}e{episode_number} {service_code} {url}"
                 print(f"Shell: {shell_command}")
                 self.process = QProcess(self)
 
@@ -216,14 +220,42 @@ class DevineApp(QWidget):
                 return service_code
         return None
 
+    import subprocess
+
+    import logging
+
+    # Set up logging to write to /Users/williamcorney/log.txt
+    logging.basicConfig(
+        filename='/Users/williamcorney/log.txt',
+        level=logging.DEBUG,  # You can change this to logging.INFO for less verbose output
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+
     def run_devine_dl(self, service_code, url):
-        result = subprocess.run(
-            ["devine", "dl", "--list-titles", service_code, url],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        self.parse_and_display_output(result.stdout)
+        try:
+            # Run the command and capture stdout and stderr
+            result = subprocess.run(
+                f"devine dl --list-titles {service_code} {url}",
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            # If the command runs successfully, process the output
+            self.parse_and_display_output(result.stdout)
+            print(result.stdout)
+        except subprocess.CalledProcessError as e:
+            # Log the error if the subprocess fails
+            logging.error(f"Command failed with error: {e}")
+            logging.error(f"stdout: {e.stdout}")
+            logging.error(f"stderr: {e.stderr}")
+            logging.error(f"Service Code: {service_code}, URL: {url}")
+            # Optionally, you can also log the stack trace
+            logging.exception("Exception occurred")
+        except Exception as e:
+            # Catch any other exceptions and log them
+            logging.error(f"Unexpected error: {e}")
+            logging.exception("Exception occurred")
 
     def parse_and_display_output(self, output):
         #self.output_text.append(output)
@@ -262,7 +294,7 @@ class DevineApp(QWidget):
             if episode_match_no_title and current_season is not None:
                 episode_number = int(episode_match_no_title.group(1))
                 # Add a dummy title for this episode
-                dummy_title = f"Episode {episode_number}"
+                dummy_title = f"Episode"
                 seasons_block1[current_season]['episodes'].append((episode_number, dummy_title))
 
         # Block 2 Processing

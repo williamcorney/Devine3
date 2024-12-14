@@ -1,11 +1,9 @@
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QComboBox, QLabel, QTextEdit, QInputDialog
-
-import sys, json, csv, subprocess, re,os
 from PyQt6.QtCore import QProcess, QProcessEnvironment
-from rotating_circle import RotatingCircleWidget
-
-
-
+import sys, json, csv, subprocess, re,os,logging
+from parsing import parse_season_data
+from services import get_service_code
+# from rotating_circle import RotatingCircleWidget
 class DevineApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -60,23 +58,19 @@ class DevineApp(QWidget):
         self.get_button.clicked.connect(self.get_button_clicked)
         self.layout.addWidget(self.list_button)
         self.layout.addWidget(self.stop_button)
-
-        self.rotating_circle = RotatingCircleWidget()
-        self.rotating_circle.setVisible(False)
-
-        # Insert the rotating circle into the layout
-        self.rotating_circle.insert_into_layout(self.quality_seasons_episodes_layout)
-
+        # self.rotating_circle = RotatingCircleWidget()
+        # self.rotating_circle.setVisible(False)
+        # # Insert the rotating circle into the layout
+        # self.rotating_circle.insert_into_layout(self.quality_seasons_episodes_layout)
         self.setLayout(self.layout)
-
-
-        self.saved_programs, self.services_data = self.load_saved_programs()
+        self.saved_programs = self.load_saved_programs()
         self.update_series_combo()
         self.series_combo.currentTextChanged.connect(self.update_url_field)
         self.seasons = {}
         self.season_combo.currentIndexChanged.connect(self.update_episodes)
 
-    from PyQt6.QtCore import QProcess
+    # Configure the logger
+    logging.basicConfig(filename='log.txt', level=logging.INFO, format='%(asctime)s - %(message)s')
 
     def get_button_clicked(self):
         season_number = self.season_combo.currentText()
@@ -88,11 +82,18 @@ class DevineApp(QWidget):
         episode_number = episode_number.zfill(2)
         url = self.url_entry.text()
 
+        # Log the input values
+        logging.info(f"Season Number: {season_number}")
+        logging.info(f"Episode Number: {episode_number}")
+        logging.info(f"Quality: {quality}")
+        logging.info(f"URL: {url}")
+
         if url:
-            service_code = self.get_service_code(url)
+            service_code = get_service_code(url)
             if service_code:
                 # Construct the shell command
                 shell_command = f"devine dl -q {quality} -w s{season_number}e{episode_number} {service_code} {url}"
+                logging.info(f"Shell Command: {shell_command}")
                 print(f"Shell: {shell_command}")
                 self.process = QProcess(self)
 
@@ -107,9 +108,9 @@ class DevineApp(QWidget):
                 self.process.setProgram("/bin/bash")  # Use an interactive shell
                 self.process.setArguments(["-c", shell_command])  # Pass the command as an argument to the shell
 
-                # Connect signals
-                self.process.readyReadStandardOutput.connect(self.handle_output)
-                self.process.readyReadStandardError.connect(self.handle_error)
+                # # Connect signals
+                # self.process.readyReadStandardOutput.connect(self.handle_output)
+                # self.process.readyReadStandardError.connect(self.handle_error)
                 self.process.started.connect(self.on_process_started)  # Monitor process start
                 self.process.finished.connect(self.on_process_finished)  # Monitor process finish
 
@@ -117,19 +118,22 @@ class DevineApp(QWidget):
 
                 if not self.process.waitForStarted():
                     self.output_text.append("Error: Failed to start the devine process.")
+                    logging.error("Error: Failed to start the devine process.")
             else:
                 self.output_text.setText("Error: Unable to determine the service code for the provided URL.")
+                logging.error("Error: Unable to determine the service code for the provided URL.")
         else:
             self.output_text.setText("Error: URL is empty. Please provide a valid URL.")
+            logging.error("Error: URL is empty. Please provide a valid URL.")
 
     def on_process_started(self):
-        self.rotating_circle.setVisible(True)
-
-        self.rotating_circle.start_rotation()
+        # self.rotating_circle.setVisible(True)
+        #
+        # self.rotating_circle.start_rotation()
         print("Started")
 
     def on_process_finished(self, exitCode, exitStatus):
-        self.rotating_circle.stop_rotation()
+        # self.rotating_circle.stop_rotation()
         print("Ended")
         # You can also add additional actions here if needed based on the exit status
         if exitStatus == QProcess.ExitStatus.NormalExit:
@@ -137,9 +141,9 @@ class DevineApp(QWidget):
         else:
             print(f"Process exited with an error (exit code {exitCode})")
 
-    def handle_output(self):
-        output = self.process.readAllStandardOutput().data().decode()
-        #self.output_text.append(output)
+    # def handle_output(self):
+    #     output = self.process.readAllStandardOutput().data().decode()
+    #     #self.output_text.append(output)
 
     def handle_error(self):
         error = self.process.readAllStandardError().data().decode()
@@ -154,21 +158,16 @@ class DevineApp(QWidget):
 
     def load_saved_programs(self):
         saved_programs = {}
-        services_data = {}
+
         try:
-            with open("series_data.json", "r") as file:
+            with open("/Users/williamcorney/PycharmProjects/Devine3/series_data.json"
+                      ""
+                      "", "r") as file:
                 saved_programs = json.load(file)
         except (FileNotFoundError, json.JSONDecodeError):
             saved_programs = {}
-        try:
-            with open("/Users/williamcorney/Library/Application Support/devine/services.cfg", "r") as file:
-                reader = csv.reader(file)
-                for row in reader:
-                    if len(row) == 2:
-                        services_data[row[0]] = row[1]
-        except FileNotFoundError:
-            print("services.cfg file not found!")
-        return saved_programs, services_data
+
+        return saved_programs
 
     def update_series_combo(self):
         self.series_combo.clear()
@@ -202,147 +201,49 @@ class DevineApp(QWidget):
             self.url_entry.clear()
 
     def list_button_clicked(self):
-
         title = self.series_combo.currentText()
         url = self.url_entry.text()
-        if title and url:
-            service_code = self.get_service_code(url)
-            if service_code:
-                self.run_devine_dl(service_code, url)
-            else:
-                self.output_text.append("No service code found for the URL")
-        else:
+
+        # Check if title or URL is missing
+        if not title or not url:
             self.output_text.append("No title or URL found for listing episodes.")
+            return
 
-    def get_service_code(self, url):
-        for service_code, base_url in self.services_data.items():
-            if url.startswith(base_url):
-                return service_code
-        return None
+        # Check for service code
+        service_code = get_service_code(url)
+        if not service_code:
+            self.output_text.append("No service code found for the URL.")
+            return
 
-    import subprocess
-
-    import logging
-
-    # Set up logging to write to /Users/williamcorney/log.txt
-    logging.basicConfig(
-        filename='/Users/williamcorney/log.txt',
-        level=logging.DEBUG,  # You can change this to logging.INFO for less verbose output
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+        # Proceed if everything is valid
+        self.run_devine_dl(service_code, url)
 
     def run_devine_dl(self, service_code, url):
         try:
-            # Run the command and capture stdout and stderr
-            result = subprocess.run(
-                f"devine dl --list-titles {service_code} {url}",
-                shell=True,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            # If the command runs successfully, process the output
-            self.parse_and_display_output(result.stdout)
-            print(result.stdout)
+            # Define the command as a list of arguments (avoiding shell=True)
+            command = ["devine", "dl", "--list-titles", service_code, url]
+
+            # Open a log file to capture the devine command output
+            with open("example1.txt", "w") as log_file:
+                # Run the devine command and capture stdout and stderr
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                # Write devine command output to the log file
+                log_file.write("=== Devine Command Output ===\n")
+                log_file.write(result.stdout)
+
+                self.seasons = parse_season_data(result.stdout)
+                self.update_seasons()
+
         except subprocess.CalledProcessError as e:
-            # Log the error if the subprocess fails
-            logging.error(f"Command failed with error: {e}")
-            logging.error(f"stdout: {e.stdout}")
-            logging.error(f"stderr: {e.stderr}")
-            logging.error(f"Service Code: {service_code}, URL: {url}")
-            # Optionally, you can also log the stack trace
-            logging.exception("Exception occurred")
-        except Exception as e:
-            # Catch any other exceptions and log them
-            logging.error(f"Unexpected error: {e}")
-            logging.exception("Exception occurred")
+            pass
 
-    def parse_and_display_output(self, output):
-        #self.output_text.append(output)
-        self.seasons = self.parse_output(output)
-        self.populate_seasons()
 
-    def parse_output(self, output, verbose=True):
-        lines = output.split('\n')  # Split the output into lines
-
-        # Dictionaries to hold the data for each block
-        seasons_block1 = {}
-        seasons_block2 = {}
-
-        # Block 1 Processing
-        current_season = None
-        for line in lines:
-            line = line.lstrip(" │├└─")  # Clean up the line
-
-            # Match for season information (e.g., "├── Season 1: 1 episodes")
-            season_match1 = re.match(r"^\s*Season\s*(\d+):\s*(\d+)\s*episodes?", line)
-            if season_match1:
-                season_number = int(season_match1.group(1))
-                number_of_episodes = int(season_match1.group(2))
-                seasons_block1[season_number] = {'number_of_episodes': number_of_episodes, 'episodes': []}
-                current_season = season_number
-
-            # Match for episode information (e.g., "│   ├── 1. The Conspiracy to Murder")
-            episode_match1 = re.match(r"^\s*(\d+)\.\s*(.+)", line)
-            if episode_match1 and current_season is not None:
-                episode_number = int(episode_match1.group(1))
-                episode_title = episode_match1.group(2).strip()
-                seasons_block1[current_season]['episodes'].append((episode_number, episode_title))
-
-            # If the line matches "Episode {number}" without a title, add a dummy title
-            episode_match_no_title = re.match(r"^\s*Episode\s*(\d+)", line)
-            if episode_match_no_title and current_season is not None:
-                episode_number = int(episode_match_no_title.group(1))
-                # Add a dummy title for this episode
-                dummy_title = f"Episode"
-                seasons_block1[current_season]['episodes'].append((episode_number, dummy_title))
-
-        # Block 2 Processing
-        season_number = None
-        for line in lines:
-            line = line.lstrip(" │├└─")  # Clean up the line
-
-            # Match for season information (e.g., "├── Season 1: 1 episodes")
-            season_match2 = re.match(r"^\s*[├└]──\s*Season\s*(\d+):\s*(\d+)\s*episode(?:s)?", line, re.IGNORECASE)
-            if season_match2:
-                season_number = int(season_match2.group(1))
-                num_episodes = int(season_match2.group(2))
-                # Overwrite or add season data
-                seasons_block2[season_number] = {'number_of_episodes': num_episodes, 'episodes': []}
-
-            # Match for episode information (e.g., "├── Episode 3")
-            episode_match2 = re.match(r"^\s*[├└]──\s*Episode\s*(\d+)", line, re.IGNORECASE)
-            if episode_match2:
-                episode_number = int(episode_match2.group(1))
-                if season_number in seasons_block2:
-                    # Add episode with None as a placeholder title if no title is available
-                    seasons_block2[season_number]['episodes'].append((episode_number, None))
-                else:
-                    # If no season is found, do nothing (skip)
-                    pass
-
-            # Match for episode line with title (e.g., "│   ├── 1. The Conspiracy to Murder")
-            episode_match3 = re.match(r"^\s*[\│├└]──\s*(\d+)\.\s*(.+)", line)
-            if episode_match3:
-                episode_number = int(episode_match3.group(1))
-                episode_title = episode_match3.group(2).strip()
-                if season_number in seasons_block2:
-                    seasons_block2[season_number]['episodes'].append((episode_number, episode_title))
-
-        # Merge dictionaries by comparing their sizes
-        if len(seasons_block1) > len(seasons_block2):
-            final_seasons = seasons_block1
-        else:
-            final_seasons = seasons_block2
-
-        # Remove seasons that have no episodes
-        seasons = {season: data for season, data in final_seasons.items() if data['episodes']}
-
-        # Return the final seasons dictionary
-
-        return seasons
-
-    def populate_seasons(self):
+    def update_seasons(self):
         self.season_combo.clear()
         for season in self.seasons:
             self.season_combo.addItem(f"Season {season}")
@@ -357,7 +258,6 @@ class DevineApp(QWidget):
                 episodes = self.seasons[season_number]['episodes']
                 for episode_number, episode_title in episodes:
                     self.episode_combo.addItem(f"{episode_number}. {episode_title}")
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

@@ -26,7 +26,7 @@ def parse_season_data(output):
         # Match for episode information with a title (e.g., "1. The Conspiracy to Murder")
         episode_match_with_title = re.match(r"^\s*(\d+)\.\s*(.+)", line)
         if episode_match_with_title and current_season is not None:
-            print ('Season number:', current_season)
+            #print ('Season number:', current_season)
             episode_number = int(episode_match_with_title.group(1))
             episode_title = episode_match_with_title.group(2).strip()
             seasons[current_season]['episodes'].append((episode_number, episode_title))
@@ -34,7 +34,7 @@ def parse_season_data(output):
         # Match for episode information without a title (e.g., "Episode 1")
         episode_match_no_title = re.match(r"^\s*Episode\s*(\d+)", line)
         if episode_match_no_title and current_season is not None:
-            print ('Season number:', current_season)
+            #print ('Season number:', current_season)
             episode_number = int(episode_match_no_title.group(1))
             dummy_title = f"Episode "  # Use the episode number as the title
             seasons[current_season]['episodes'].append((episode_number, dummy_title))
